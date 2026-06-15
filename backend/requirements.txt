@@ -1,0 +1,20 @@
+# Packages as of 2024-06
+
+webrtcvad
+sounddevice
+numpy
+setuptools
+termcolor
+reportlab
+
+openai
+aiofiles
+pygame
+sounddevice
+webrtcvad
+dotenv
+
+# api packages
+fastapi
+uvicorn
+python-multipart
