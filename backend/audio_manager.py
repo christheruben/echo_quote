@@ -270,11 +270,11 @@ class AudioManager:
                 "panel efficiency, region, and currency."
             ),
         )
-        self.capture.start()
         self.worker_task = asyncio.create_task(
             self.transcription.worker()
         )
         self.running = True
+        self.capture.start()
 
         print(colored("\n● Transcription started on both streams...", "green"))
 
