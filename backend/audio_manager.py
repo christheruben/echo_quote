@@ -1,14 +1,11 @@
-from audio_pipeline import DualStreamCapture, Transcription, Extraction, list_devices, resolve_devices
+from audio_pipeline import Transcription, Extraction, StreamIngest
 from pdf_generation import QuotePDFGenerator
 
-import argparse
 import asyncio
 import json
-import msvcrt
 import os
 from queue import Queue
 
-import numpy as np
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from termcolor import colored
@@ -104,153 +101,39 @@ def parse_and_generate(result: str):
         usable=usable,
         efficiency=efficiency,
     )
-    gen.generate_pdf("solar_quote.pdf")
-    print(colored("\nQuote generated: solar_quote.pdf", "green"))
-
-
-# =========================
-# KEY LISTENER
-# =========================
-async def listen_for_keys(loop, transcription, extraction, stop_event):
-    print(colored("Press [S] to extract + generate quote. Press [Q] to quit.\n", "cyan"))
-    while not stop_event.is_set():
-        key = await loop.run_in_executor(None, msvcrt.getwch)
-
-        if key.lower() == "s":
-            print(colored("\nExtracting from conversation...", "cyan"))
-            result = await extraction.extract(transcription.chat_history)
-            if result:
-                print(colored("Extraction result:", "cyan"))
-                print(result)
-                parse_and_generate(result)
-            else:
-                print(colored("[ERROR] Extraction returned no result.", "red"))
-            stop_event.set()
-
-        elif key.lower() == "q":
-            print(colored("\nQuitting...", "yellow"))
-            stop_event.set()
-
-
-# =========================
-# MAIN
-# =========================
-# async def main(cable_name=None, mic_name=None):
-#     loop = asyncio.get_event_loop()
-#     stop_event = asyncio.Event()
-#     queue = Queue()
-
-#     # Resolve audio devices
-#     cable_idx, mic_idx = resolve_devices(cable_name=cable_name, mic_name=mic_name)
-
-#     # Build pipeline components
-#     capture = DualStreamCapture(
-#         thread_safe_queue=queue,
-#         cable_device=cable_idx,
-#         mic_device=mic_idx,
-#         sample_rate=SAMPLE_RATE,
-#         frame_duration=FRAME_DURATION,
-#         vad_aggressiveness=VAD_AGGRESSIVENESS,
-#         silence_end_frames=SILENCE_END_FRAMES,
-#         speech_start_frames=SPEECH_START_FRAMES,
-#     )
-
-#     transcription = Transcription(
-#         groq_client=groq_client,
-#         thread_safe_queue=queue,
-#         respond=False,
-#         sample_rate=SAMPLE_RATE,
-#     )
-
-#     extraction = Extraction(
-#         groq_client=groq_client,
-#         instructions=(
-#             "Extract the following from the conversation: "
-#             "roof area in square meters, usable roof percentage, panel efficiency, region, and currency. "
-#             "Return null for any field not mentioned. "
-#             "Note: transcript lines are prefixed with [YOU] (salesperson) and [THEM] (client). "
-#             "Extract values from the client's answers, not the salesperson's questions."
-#         ),
-#     )
-
-#     # Start streams + workers
-#     capture.start()
-#     asyncio.create_task(transcription.worker())
-#     asyncio.create_task(listen_for_keys(loop, transcription, extraction, stop_event))
-
-#     print(colored("\n● Listening on both streams...", "green"))
-
-#     try:
-#         await stop_event.wait()
-#     finally:
-#         capture.stop()
-
-
-# if __name__ == "__main__":
-#     parser = argparse.ArgumentParser(description="Solar quote voice pipeline")
-#     parser.add_argument("--list",  action="store_true", help="List audio devices and exit")
-#     parser.add_argument("--cable", type=str, default=None, help="Partial name of VB-Cable device")
-#     parser.add_argument("--mic",   type=str, default=None, help="Partial name of mic device")
-#     args = parser.parse_args()
-
-#     from audio_pipeline import list_devices as _list
-#     _list()
-
-#     if args.list:
-#         raise SystemExit(0)
-
-#     try:
-#         asyncio.run(main(cable_name=args.cable, mic_name=args.mic))
-#     except KeyboardInterrupt:
-#         print(colored("\nExiting...", "yellow"))
-#     except RuntimeError as e:
-#         print(colored(f"[ERROR] {e}", "red"))
+    return gen.generate_pdf()
 
 
 """
-Refactorization into audio manager compatible with FastAPI endpoints to start, stop transcription and trigger extraction + PDF generation. 
-The main audio processing pipeline ( DualStreamCapture, Transcription, Extraction) can be encapsulated within the audio manager, which maintains 
-state and allows control via API calls.
-*N.B. Class still relies on the use of virtual cables, must be changed to support more flexible audio routing in the future.
+AudioManager encapsulates the transcription/extraction pipeline and is driven
+entirely via FastAPI endpoints (start, stop, extract, quote). Audio is fed in
+from a browser (getUserMedia/getDisplayMedia over WebSocket) via feed_audio(),
+which forwards into StreamIngest for VAD segmentation.
 """
-
 class AudioManager:
-    def __init__(
-            self,
-            sample_rate=16000,
-            frame_duration=30,
-            vad_aggressiveness=2,
-            silence_end_frames=10,
-            speech_start_frames=5,
-            ):
-        self.groq_client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=os.getenv("GROQ_API_KEY"))
-        #runtime state
+    def __init__(self, sample_rate=16000, frame_duration=30, vad_aggressiveness=2,
+                 silence_end_frames=10, speech_start_frames=5):
+        self.groq_client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1",
+                                        api_key=os.getenv("GROQ_API_KEY"))
         self.queue = Queue()
-        self.stop_event = asyncio.Event()
         self.running = False
-        self.capture = None
+        self.ingest = None
         self.transcription = None
         self.extraction = None
         self.worker_task = None
-        #config
+        self.last_result = None
         self.sample_rate = sample_rate
         self.frame_duration = frame_duration
         self.vad_aggressiveness = vad_aggressiveness
         self.silence_end_frames = silence_end_frames
         self.speech_start_frames = speech_start_frames
 
-
-    async def start_transcription(self, cable_name=None, mic_name=None):
-        # Initialize and start the audio pipeline components here
+    async def start_transcription(self):
         if self.running:
-            print(colored("[WARNING] Transcription already running.", "yellow"))
             return
 
-        cable_idx, mic_idx = resolve_devices(cable_name=cable_name, mic_name=mic_name)
-        self.capture = DualStreamCapture(
+        self.ingest = StreamIngest(
             thread_safe_queue=self.queue,
-            cable_device=cable_idx,
-            mic_device=mic_idx,
             sample_rate=self.sample_rate,
             frame_duration=self.frame_duration,
             vad_aggressiveness=self.vad_aggressiveness,
@@ -265,46 +148,33 @@ class AudioManager:
         )
         self.extraction = Extraction(
             groq_client=self.groq_client,
-            instructions=(
-                "Extract roof area, usable roof percentage, "
-                "panel efficiency, region, and currency."
-            ),
+            instructions=("Extract roof area, usable roof percentage, "
+                          "panel efficiency, region, and currency."),
         )
-        self.worker_task = asyncio.create_task(
-            self.transcription.worker()
-        )
+        self.worker_task = asyncio.create_task(self.transcription.worker())
         self.running = True
-        self.capture.start()
 
-        print(colored("\n● Transcription started on both streams...", "green"))
+    def feed_audio(self, speaker: str, pcm16_bytes: bytes, native_rate: int):
+        """Called from the WebSocket handler for every incoming chunk."""
+        if self.ingest:
+            self.ingest.feed(speaker, pcm16_bytes, native_rate)
 
     async def stop_transcription(self):
         if not self.running:
             return
-
-        # stop audio capture
-        if self.capture:
-            self.capture.stop()
-
-        # stop worker loop
         if self.worker_task:
             self.worker_task.cancel()
             self.worker_task = None
-
         self.running = False
-
         print("Audio system stopped")
 
     async def extract_and_generate(self):
         if not self.transcription:
             return None
+        self.last_result = await self.extraction.extract(self.transcription.chat_history)
+        return self.last_result
 
-        result = await self.extraction.extract(
-            self.transcription.chat_history
-        )
-
-        return result
-
-
-
-    
+    async def generate_quote_pdf(self) -> bytes:
+        if not self.last_result:
+            raise ValueError("No extraction result available. Run extract_and_generate() first.")
+        return parse_and_generate(self.last_result)

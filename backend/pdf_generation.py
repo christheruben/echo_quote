@@ -66,10 +66,12 @@ class QuotePDFGenerator:
             "net_25yr":      net_25,
         }
 
-    def generate_pdf(self, output_path: str):
+    def generate_pdf(self) -> bytes:
+        from io import BytesIO
+        buf = BytesIO()
         q   = self.q
         sym = q["sym"]
-        c   = canvas.Canvas(output_path, pagesize=A4)
+        c   = canvas.Canvas(buf, pagesize=A4)
         w, h = A4
 
         def fmt(val):
@@ -133,7 +135,6 @@ class QuotePDFGenerator:
         self._draw_table(c, y, returns_rows, w)
 
         c.save()
-        print(f"Quote saved to {output_path}")
 
     def _draw_table(self, c, y, rows, page_width, highlight_last=False):
         row_h  = 8*mm

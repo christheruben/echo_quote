@@ -1,0 +1,29 @@
+# byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# virtual environments
+venv/
+env/
+.venv/
+
+# environment variables
+.env
+
+# runtime artifacts specific to this project
+chat_logs/
+*.pdf
+
+# ide
+.vscode/
+.idea/
+
+# os
+.DS_Store
+Thumbs.db
