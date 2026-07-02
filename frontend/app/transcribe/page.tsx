@@ -1,12 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDualStreamCapture } from '@/features/useDualStreamCapture';
 
 export default function TranscribePage() {
     const [isRunning, setIsRunning] = useState(false);
     const [extractResult, setExtractResult] = useState<string | null>(null);
+    const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
     const { start, stop } = useDualStreamCapture();
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const pollTranscript = async () => { try{ const response = await fetch('http://localhost:8000/transcript'); if (!response.ok) throw new Error('Failed to transcribe'); const data = await response.json(); setTranscriptLines(data.lines) }catch(error){ console.error(error)}
+    }
+
+    useEffect(() => {
+        if (isRunning) {
+            setTranscriptLines([]);
+            pollRef.current = setInterval(pollTranscript, 2000);
+        } else {
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+            }
+        }
+
+        return () => {
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+            }
+        };
+    }, [isRunning]);
 
     const handleStart = async () => {
         try {
@@ -93,6 +117,26 @@ export default function TranscribePage() {
                             </button>
                         </div>
                     </div>
+                </div>
+
+                {/* Live transcript */}
+                <div className="p-6 border-b border-gray-100">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">
+                        Live Transcript
+                    </p>
+                    {transcriptLines.length > 0 ? (
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {transcriptLines.map((line, i) => (
+                                <p key={i} className="text-sm text-gray-700 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                                    {line}
+                                </p>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-sm text-gray-400">
+                            {isRunning ? 'Waiting for speech...' : 'No transcript yet — start a session.'}
+                        </p>
+                    )}
                 </div>
 
                 {/* Result */}

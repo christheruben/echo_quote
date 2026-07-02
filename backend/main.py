@@ -62,3 +62,15 @@ async def quote():
     pdf_bytes = await audio_manager.generate_quote_pdf()
     return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
                               headers={"Content-Disposition": "attachment; filename=solar_quote.pdf"})
+
+@app.get("/transcript")
+async def transcript():
+    if not audio_manager.transcription:
+        return {"lines": []}
+    # Skip the system prompt (first entry), return only user-role transcript lines
+    lines = [
+        msg["content"]
+        for msg in audio_manager.transcription.chat_history
+        if msg["role"] == "user"
+    ]
+    return {"lines": lines}
