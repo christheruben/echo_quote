@@ -7,6 +7,7 @@ export default function TranscribePage() {
     const [isRunning, setIsRunning] = useState(false);
     const [extractResult, setExtractResult] = useState<string | null>(null);
     const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
+    const [captureError, setCaptureError] = useState<string | null>(null);
     const { start, stop } = useDualStreamCapture();
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -36,13 +37,22 @@ export default function TranscribePage() {
         try {
             const response = await fetch('http://localhost:8000/start', { method: 'POST' });
             if (!response.ok) throw new Error('Failed to start transcription');
-            await start(); // opens mic + tab-audio capture, opens both WS connections
             setIsRunning(true);
         } catch (error) {
             console.error(error);
+            return;    
+        }
+        try{
+            setCaptureError(null);
+            await start();
+        } catch (error: any) {
+            console.error('Capture error:', error); // ← add this
+            setCaptureError(error.message ?? 'Audio capture failed');
+            await fetch('http://localhost:8000/stop', { method: 'POST' });
             setIsRunning(false);
         }
     };
+
 
     const handleStop = async () => {
         stop(); // closes both WS connections, audio contexts, and media tracks
@@ -100,6 +110,7 @@ export default function TranscribePage() {
                                 >
                                     Start Recording
                                 </button>
+                                
                             ) : (
                                 <button
                                     onClick={handleStop}
@@ -116,6 +127,9 @@ export default function TranscribePage() {
                                 Extract & Generate
                             </button>
                         </div>
+                        {captureError && (
+                            <p className="text-xs text-red-500 mt-2">{captureError}</p>
+                        )}
                     </div>
                 </div>
 

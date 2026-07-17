@@ -1,9 +1,7 @@
-from fastapi import FastAPI
-from audio_manager import AudioManager
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from fastapi import WebSocket, WebSocketDisconnect
+from audio_manager import AudioManager
 from io import BytesIO
 
 app = FastAPI()
@@ -18,23 +16,20 @@ app.add_middleware(
 )
 
 
+# =========================
+# SESSION CONTROL
+# =========================
 
 @app.post("/start")
 async def start():
     await audio_manager.start_transcription()
-    return {"status" : "started"}
+    return {"status": "started"}
 
 
 @app.post("/stop")
 async def stop():
     await audio_manager.stop_transcription()
-    return {"status" : "stopped"}
-
-
-@app.post("/extract")
-async def extract():
-    result = await audio_manager.extract_and_generate()
-    return {"result" : result}
+    return {"status": "stopped"}
 
 
 @app.get("/status")
@@ -44,33 +39,67 @@ async def status():
         "has_transcription": audio_manager.transcription is not None,
     }
 
+
+# =========================
+# AUDIO WEBSOCKET
+# =========================
+
 @app.websocket("/ws/audio/{speaker}")
 async def audio_ws(websocket: WebSocket, speaker: str, rate: int = 48000):
     await websocket.accept()
-    data = await websocket.receive_bytes()
-    print(f"[WS] {speaker} received {len(data)} bytes")
-    audio_manager.feed_audio(speaker, data, native_rate=rate)
+    print(f"[WS] {speaker} connected")
+
     try:
         while True:
             data = await websocket.receive_bytes()
-            audio_manager.feed_audio(speaker, data, native_rate=rate)
-    except WebSocketDisconnect:
-        pass
 
-@app.get("/quote")
-async def quote():
-    pdf_bytes = await audio_manager.generate_quote_pdf()
-    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
-                              headers={"Content-Disposition": "attachment; filename=solar_quote.pdf"})
+            # ✅ FIX: force stable rate assumption
+            audio_manager.feed_audio(
+                speaker,
+                data,
+                native_rate=48000
+            )
+
+    except WebSocketDisconnect:
+        print(f"[WS] {speaker} disconnected")
+
+
+# =========================
+# TRANSCRIPT
+# =========================
 
 @app.get("/transcript")
 async def transcript():
     if not audio_manager.transcription:
         return {"lines": []}
-    # Skip the system prompt (first entry), return only user-role transcript lines
+
     lines = [
         msg["content"]
         for msg in audio_manager.transcription.chat_history
-        if msg["role"] == "user"
+        if msg["role"] == "user"  # excludes the system prompt
     ]
     return {"lines": lines}
+
+
+# =========================
+# EXTRACTION
+# =========================
+
+@app.post("/extract")
+async def extract():
+    result = await audio_manager.extract_and_generate()
+    return {"result": result}
+
+
+# =========================
+# PDF QUOTE
+# =========================
+
+@app.get("/quote")
+async def quote():
+    pdf_bytes = await audio_manager.generate_quote_pdf()
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=solar_quote.pdf"},
+    )

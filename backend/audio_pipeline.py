@@ -15,13 +15,14 @@ from termcolor import colored
 
 
 def _resample(audio: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
-    target_len = int(len(audio) * to_rate / from_rate)
-    return np.interp(
-        np.linspace(0, len(audio) - 1, target_len),
-        np.arange(len(audio)),
-        audio.astype(np.float64),
-    ).astype(np.int16)
+    if from_rate == to_rate:
+        return audio
 
+    if from_rate == 48000 and to_rate == 16000:
+        return audio[::3]
+
+    step = max(1, int(from_rate / to_rate))
+    return audio[::step]
 
 # =================
 # STREAM INGEST (browser-native, no pyaudio)
@@ -32,18 +33,11 @@ class StreamIngest:
     Speaker-aware VAD segmenter. Feed it raw PCM16 mono chunks from ANY source
     (browser WebSocket, a file, etc.) via `feed()`. No device indices, no pyaudio.
     """
-
     _VAD_RATE = 16000
 
-    def __init__(
-        self,
-        thread_safe_queue: Queue,
-        sample_rate: int = 16000,
-        frame_duration: int = 30,
-        vad_aggressiveness: int = 2,
-        silence_end_frames: int = 10,
-        speech_start_frames: int = 5,
-    ):
+    def __init__(self, thread_safe_queue, sample_rate=16000, frame_duration=30,
+                 vad_aggressiveness=2, speech_start_frames=5, silence_end_frames=10
+                 ):
         self.queue = thread_safe_queue
         self.sample_rate = sample_rate
         self.frame_duration = frame_duration
@@ -94,6 +88,10 @@ class StreamIngest:
         except Exception as e:
             print(colored(f"[VAD ERROR:{speaker}] {e}", "red"))
             return
+        
+        if speaker == "you":
+            rms = np.sqrt(np.mean(vad_frame.astype(np.float32) ** 2))
+
 
         if is_speech:
             self._speech_frames[speaker] += 1
@@ -108,6 +106,11 @@ class StreamIngest:
                 if len(self._buffer[speaker]) > self._VAD_RATE * 0.1:
                     print(colored(f"[{speaker.upper()}] Processing...", "blue"))
                     segment = np.array(self._buffer[speaker], dtype=np.int16)
+                    rms = np.sqrt(np.mean(segment.astype(np.float32)**2))
+                    if rms < 300: #(between 200 - 600)
+                        print(colored(f"[{speaker.upper()}] Segment too quiet (RMS={rms:.1f}), discarding", "red"))
+                        self._buffer[speaker].clear()
+                        return
                     if self._VAD_RATE != self.sample_rate:
                         segment = _resample(segment, self._VAD_RATE, self.sample_rate)
                     self.queue.put({"speaker": speaker, "audio": segment.tolist()})

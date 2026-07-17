@@ -110,9 +110,13 @@ entirely via FastAPI endpoints (start, stop, extract, quote). Audio is fed in
 from a browser (getUserMedia/getDisplayMedia over WebSocket) via feed_audio(),
 which forwards into StreamIngest for VAD segmentation.
 """
-class AudioManager:
-    def __init__(self, sample_rate=16000, frame_duration=30, vad_aggressiveness=2,
-                 silence_end_frames=10, speech_start_frames=5):
+class AudioManager: 
+    def __init__(self,
+                 sample_rate=16000,
+                 frame_duration=30,
+                 vad_aggressiveness=int(os.getenv("VAD_AGGRESSIVENESS", 1)),
+                 silence_end_frames=int(os.getenv("SILENCE_END_FRAMES", 10)),
+                 speech_start_frames=int(os.getenv("SPEECH_START_FRAMES", 2))):
         self.groq_client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1",
                                         api_key=os.getenv("GROQ_API_KEY"))
         self.queue = Queue()
