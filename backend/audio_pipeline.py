@@ -100,7 +100,7 @@ class StreamIngest:
             self._silence_frames[speaker] += 1
             self._speech_frames[speaker] = 0
             if self._silence_frames[speaker] == self.silence_end_frames:
-                if len(self._buffer[speaker]) > self._VAD_RATE * 0.1:
+                if len(self._buffer[speaker]) > self._VAD_RATE * 0.5:
                     print(colored(f"[{speaker.upper()}] Processing...", "blue"))
                     segment = np.array(self._buffer[speaker], dtype=np.int16)
                     rms = np.sqrt(np.mean(segment.astype(np.float32)**2))
@@ -151,10 +151,27 @@ class Transcription:
             response = await self.groq_client.audio.transcriptions.create(
                 model="whisper-large-v3-turbo",
                 file=("audio.wav", wav_buffer),
-                response_format="text",
+                response_format="verbose_json",
             )
 
-            return response or None
+            segments = getattr(response, "segments", None) or []
+            if not segments:
+                return None
+
+            text_parts = []
+            for seg in segments:
+                no_speech_prob = seg.get("no_speech_prob", 0) if isinstance(seg, dict) else getattr(seg, "no_speech_prob", 0)
+                avg_logprob = seg.get("avg_logprob", 0) if isinstance(seg, dict) else getattr(seg, "avg_logprob", 0)
+                text = seg.get("text", "") if isinstance(seg, dict) else getattr(seg, "text", "")
+
+                if no_speech_prob > 0.6:
+                    continue
+                if avg_logprob < -1.0:
+                    continue
+                text_parts.append(text.strip())
+
+            result = " ".join(t for t in text_parts if t).strip()
+            return result or None
 
         except Exception as e:
             print(colored(f"[TRANSCRIPTION ERROR] {e}", "red"))

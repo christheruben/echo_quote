@@ -13,31 +13,43 @@ CURRENCIES = {
     "EUR": {"sym": "€",  "installPerW": 1.15, "elecRate": 0.25},
 }
 
-REGIONS = {
-    "za": {"label": "South Africa",        "peakSun": 5.5},
-    "au": {"label": "Australia",           "peakSun": 4.8},
-    "uk": {"label": "United Kingdom",      "peakSun": 2.8},
-    "us": {"label": "United States",       "peakSun": 4.5},
-    "eu": {"label": "Europe (Central)",    "peakSun": 3.5},
-    "me": {"label": "Middle East / MENA",  "peakSun": 6.0},
+# Used to size the system from usage. Without a collected region, we assume
+# a mid-range US peak-sun value; revisit if region capture gets added back.
+DEFAULT_PEAK_SUN = 4.5
+
+ROOF_TYPE_DERATE = {
+    "shingle": 1.00,
+    "tile":    0.95,
+    "metal":   1.00,
+    "flat":    0.85,
+}
+
+PROPERTY_TYPE_LABELS = {
+    "single family": "Single Family Home",
+    "multifamily":   "Multifamily Property",
+    "commercial":    "Commercial Property",
 }
 
 
 class QuotePDFGenerator:
-    def __init__(self, region_key: str, currency_key: str, area_m2: float, usable: float = 0.75, efficiency: float = 0.2):
-        self.q = self.calculate_quote(region_key, currency_key, area_m2, usable, efficiency)
+    def __init__(self, full_name: str, address: str, property_type: str,
+                 roof_type: str, monthly_bill: float, currency_key: str = "USD"):
+        self.full_name = full_name
+        self.address = address
+        self.property_type = property_type
+        self.roof_type = roof_type
+        self.q = self.calculate_quote(monthly_bill, roof_type, currency_key)
 
-    def calculate_quote(self, region_key: str, currency_key: str, area_m2: float, usable: float = 0.75, efficiency: float = 0.2):
-        """Port of the TypeScript calculations."""
-        region = REGIONS[region_key]
-        cur = CURRENCIES[currency_key]
+    def calculate_quote(self, monthly_bill: float, roof_type: str, currency_key: str):
+        cur = CURRENCIES.get(currency_key, CURRENCIES["USD"])
+        derate = ROOF_TYPE_DERATE.get(roof_type.strip().lower(), 1.0)
 
-        usable_area   = area_m2 * usable
-        system_kw     = usable_area * efficiency
-        num_panels    = max(0, round(usable_area / 1.8))
-        annual_kwh    = system_kw * region["peakSun"] * 365
-        annual_saving = annual_kwh * cur["elecRate"]
-        total_cost    = system_kw * 1000 * cur["installPerW"]
+        annual_bill    = monthly_bill * 12
+        annual_kwh     = annual_bill / cur["elecRate"]
+        system_kw      = (annual_kwh / (DEFAULT_PEAK_SUN * 365)) / derate
+        num_panels     = max(0, round(system_kw * 1000 / 400))  # ~400W panels
+        annual_saving  = annual_kwh * cur["elecRate"]
+        total_cost     = system_kw * 1000 * cur["installPerW"]
 
         hardware  = total_cost * 0.50
         inverter  = total_cost * 0.15
@@ -48,11 +60,9 @@ class QuotePDFGenerator:
         net_25  = annual_saving * 25 - total_cost
 
         return {
-            "region":        region["label"],
             "currency":      currency_key,
             "sym":           cur["sym"],
-            "area_m2":       area_m2,
-            "usable_area":   usable_area,
+            "monthly_bill":  monthly_bill,
             "system_kw":     system_kw,
             "num_panels":    num_panels,
             "annual_kwh":    annual_kwh,
@@ -84,7 +94,9 @@ class QuotePDFGenerator:
         c.setFont("Helvetica-Bold", 22)
         c.drawString(20*mm, h - 28*mm, "Solar Installation Quote")
         c.setFont("Helvetica", 11)
-        c.drawString(20*mm, h - 40*mm, q["region"])
+        c.drawString(20*mm, h - 38*mm, self.full_name)
+        c.drawString(20*mm, h - 44*mm, self.address)
+        c.drawString(20*mm, h - 50*mm, PROPERTY_TYPE_LABELS.get(self.property_type.strip().lower(), self.property_type))
 
         # ── System Summary ────────────────────────────────────────────────────
         y = h - 80*mm
@@ -94,11 +106,11 @@ class QuotePDFGenerator:
         y -= 8*mm
 
         summary_rows = [
-            ("Roof Area",         f"{fmt(q['area_m2'])} m²"),
-            ("Usable Area",       f"{fmt(q['usable_area'])} m²"),
+            ("Roof Type",         self.roof_type.title()),
             ("System Size",       f"{fmt(q['system_kw'])} kW"),
             ("Number of Panels",  str(q["num_panels"])),
             ("Annual Production", f"{fmt(q['annual_kwh'])} kWh"),
+            ("Current Monthly Bill", f"{sym} {fmt(q['monthly_bill'])}"),
         ]
         self._draw_table(c, y, summary_rows, w)
         y -= len(summary_rows) * 8*mm + 10*mm
@@ -135,6 +147,8 @@ class QuotePDFGenerator:
         self._draw_table(c, y, returns_rows, w)
 
         c.save()
+        buf.seek(0)
+        return buf.getvalue()
 
     def _draw_table(self, c, y, rows, page_width, highlight_last=False):
         row_h  = 8*mm
@@ -161,10 +175,12 @@ class QuotePDFGenerator:
 # ── Usage ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     gen = QuotePDFGenerator(
-        region_key="za",
-        currency_key="ZAR",
-        area_m2=80,
-        usable=0.75,
-        efficiency=0.2,
+        full_name="John Smith",
+        address="1234 Maple Drive, San Diego, California",
+        property_type="single family",
+        roof_type="tile",
+        monthly_bill=200.0,
+        currency_key="USD",
     )
-    gen.generate_pdf("solar_quote.pdf")
+    with open("solar_quote.pdf", "wb") as f:
+        f.write(gen.generate_pdf())

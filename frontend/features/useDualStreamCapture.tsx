@@ -30,15 +30,12 @@ export function useDualStreamCapture() {
 
     const source = ctx.createMediaStreamSource(stream);
 
-    // ✅ FIX: boost mic volume (VERY important)
-    const gain = ctx.createGain();
-    gain.gain.value = speaker === 'you' ? 2.0 : 1.0;
-
     await ctx.audioWorklet.addModule('/worklets/pcm-worklet.js');
 
     const node = new AudioWorkletNode(ctx, 'pcm-processor');
 
-    const ws = new WebSocket(`${WS_BASE}/${speaker}?rate=48000`);
+    const nativeRate = Math.round(ctx.sampleRate);
+    const ws = new WebSocket(`${WS_BASE}/${speaker}?rate=${nativeRate}`);
     ws.binaryType = 'arraybuffer';
 
     await new Promise<void>((resolve, reject) => {
@@ -52,8 +49,7 @@ export function useDualStreamCapture() {
       }
     };
   
-    source.connect(gain);
-    gain.connect(node);
+    source.connect(node);
 
     handles.current[speaker] = { ctx, ws, stream };
   }, []);
@@ -70,7 +66,11 @@ export function useDualStreamCapture() {
     let display: MediaStream;
     try {
       display = await navigator.mediaDevices.getDisplayMedia({
-        audio: true,
+          audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
         video: true,
       });
     } catch {

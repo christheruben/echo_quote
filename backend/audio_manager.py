@@ -30,11 +30,10 @@ VAD_AGGRESSIVENESS = 2
 # DEFAULTS
 # =========================
 DEFAULTS = {
-    "roof_area":             50.0,
-    "usable_roof_percentage": 0.75,
-    "panel_efficiency":       0.2,
-    "region":                "za",
-    "currency":              "ZAR",
+    "property_type": "single family",
+    "roof_type":     "shingle",
+    "monthly_bill":  150.0,
+    "currency":      "USD",
 }
 
 REGION_ALIASES = {
@@ -71,35 +70,32 @@ def parse_and_generate(result: str):
     if "extracted" in data:
         data = data["extracted"]
 
-    raw_usable     = data.get("usable_roof_percentage") or DEFAULTS["usable_roof_percentage"] * 100
-    raw_efficiency = data.get("panel_efficiency")       or DEFAULTS["panel_efficiency"] * 100
-    usable     = raw_usable / 100     if raw_usable     > 1 else raw_usable
-    efficiency = raw_efficiency / 100 if raw_efficiency > 1 else raw_efficiency
-    roof_area  = data.get("roof_area") or DEFAULTS["roof_area"]
+    full_name     = data.get("full_name") or "Unknown"
+    address       = data.get("address") or "Unknown"
+    property_type = data.get("property_type") or DEFAULTS["property_type"]
+    roof_type     = data.get("roof_type") or DEFAULTS["roof_type"]
 
-    raw_region   = str(data.get("region")   or "")
-    raw_currency = str(data.get("currency") or "")
-    region_key   = normalize_region(raw_region)   or DEFAULTS["region"]
-    currency_key = normalize_currency(raw_currency) or DEFAULTS["currency"]
-
-    if not normalize_region(raw_region):
-        print(colored(f"[WARNING] Unknown region '{raw_region}', using '{DEFAULTS['region']}'", "yellow"))
-    if not normalize_currency(raw_currency):
-        print(colored(f"[WARNING] Unknown currency '{raw_currency}', using '{DEFAULTS['currency']}'", "yellow"))
+    raw_bill = data.get("monthly_bill")
+    try:
+        monthly_bill = float(raw_bill) if raw_bill is not None else DEFAULTS["monthly_bill"]
+    except (TypeError, ValueError):
+        print(colored(f"[WARNING] Could not parse monthly_bill '{raw_bill}', using default", "yellow"))
+        monthly_bill = DEFAULTS["monthly_bill"]
 
     print(colored("\n--- Extracted Quote Parameters ---", "cyan"))
-    print(f"  Roof Area:          {roof_area} m²")
-    print(f"  Usable Percentage:  {usable * 100:.0f}%")
-    print(f"  Panel Efficiency:   {efficiency * 100:.0f}%")
-    print(f"  Region:             {region_key}")
-    print(f"  Currency:           {currency_key}")
+    print(f"  Full Name:       {full_name}")
+    print(f"  Address:         {address}")
+    print(f"  Property Type:   {property_type}")
+    print(f"  Roof Type:       {roof_type}")
+    print(f"  Monthly Bill:    ${monthly_bill:.2f}")
 
     gen = QuotePDFGenerator(
-        region_key=region_key,
-        currency_key=currency_key,
-        area_m2=roof_area,
-        usable=usable,
-        efficiency=efficiency,
+        full_name=full_name,
+        address=address,
+        property_type=property_type,
+        roof_type=roof_type,
+        monthly_bill=monthly_bill,
+        currency_key=DEFAULTS["currency"],
     )
     return gen.generate_pdf()
 
@@ -152,8 +148,12 @@ class AudioManager:
         )
         self.extraction = Extraction(
             groq_client=self.groq_client,
-            instructions=("Extract roof area, usable roof percentage, "
-                          "panel efficiency, region, and currency."),
+            instructions=(
+                "Extract the following fields from the solar qualification call: "
+                "full_name, address, property_type (single family, multifamily, or commercial), "
+                "roof_type (shingle, tile, metal, or flat), and monthly_bill (in dollars). "
+                "If a field wasn't mentioned, return null for it."
+            ),
         )
         self.worker_task = asyncio.create_task(self.transcription.worker())
         self.running = True
