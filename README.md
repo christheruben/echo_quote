@@ -1,15 +1,21 @@
 # Echo Solar
 
-Echo Solar is a web application for live solar sales call transcription and automated quote generation. It captures a sales call in real time (both the sales rep's microphone and the customer's tab/call audio), transcribes both sides using Whisper, extracts structured qualification data with an LLM, and generates a PDF solar quote from the results.
+Echo Solar is a web application for solar installation quoting. It supports two ways of collecting customer information: live transcription of a solar sales call (capturing both the rep's microphone and the customer's tab/call audio), and a manual web form for direct data entry. Both paths feed the same extraction and PDF quote generation pipeline.
 
 ## How it works
 
+**Call transcription path:**
 1. A Chrome-based capture layer grabs microphone audio (`getUserMedia`) and tab/call audio (`getDisplayMedia`), streaming raw PCM over WebSockets to the backend.
 2. The backend segments incoming audio per-speaker using WebRTC VAD (voice activity detection), discarding silence and low-confidence noise.
 3. Each speech segment is transcribed via Groq's Whisper API, with low-confidence segments filtered out using `no_speech_prob` and `avg_logprob`.
 4. Live transcripts are polled and displayed in the frontend as the call progresses.
 5. Once the call ends, an LLM (Llama 3.3 via Groq) extracts structured fields from the transcript: customer name, address, property type, roof type, and average monthly electricity bill.
-6. A PDF quote is generated from the extracted fields, estimating system size, cost breakdown, and projected savings.
+
+**Manual entry path:**
+- A web form lets a user enter the same fields directly (name, address, property type, roof type, monthly bill) without needing a live call.
+
+**Shared:**
+- Both paths converge on the same quote engine: extracted or submitted fields are used to estimate system size, cost breakdown, and projected savings, and generate a PDF quote.
 
 ## Stack
 
@@ -70,6 +76,14 @@ npm run dev
 ```
 
 Set `NEXT_PUBLIC_WS_URL` to point at your backend's WebSocket URL.
+
+## `docs/`
+
+This folder holds living project documentation meant for fast onboarding — by a human picking the project back up after time away, or an AI assistant starting a session with no prior context.
+
+- **`docs/PROJECT_BRIEFING.md`** — the current source of truth on architecture, file layout, data flow, and known gaps/debt. It's more detailed and implementation-focused than this README, and is expected to be updated as the codebase changes (this README is for humans getting oriented quickly; the briefing is for deep context).
+
+When making an architectural change (adding an endpoint, restructuring a flow, introducing a new dependency between frontend and backend), update `docs/PROJECT_BRIEFING.md` in the same commit if practical — stale onboarding docs are worse than no docs, since they actively mislead rather than just being unhelpful.
 
 ## Notes on audio capture
 
