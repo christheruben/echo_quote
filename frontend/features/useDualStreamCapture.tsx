@@ -47,16 +47,6 @@ export function useDualStreamCapture() {
     });
 
     node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-      const samples = new Int16Array(e.data);
-
-      let max = 0;
-
-      for (let i = 0; i < samples.length; i++) {
-        max = Math.max(max, Math.abs(samples[i]));
-      }
-
-      console.log("WORKLET AMPLITUDE:", max);
-
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(e.data);
       }
@@ -64,7 +54,6 @@ export function useDualStreamCapture() {
   
     source.connect(gain);
     gain.connect(node);
-    node.connect(ctx.destination);
 
     handles.current[speaker] = { ctx, ws, stream };
   }, []);

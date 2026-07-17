@@ -87,10 +87,7 @@ class StreamIngest:
             is_speech = self._vad[speaker].is_speech(vad_frame.tobytes(), self._VAD_RATE)
         except Exception as e:
             print(colored(f"[VAD ERROR:{speaker}] {e}", "red"))
-            return
-        
-        if speaker == "you":
-            rms = np.sqrt(np.mean(vad_frame.astype(np.float32) ** 2))
+            return  
 
 
         if is_speech:
