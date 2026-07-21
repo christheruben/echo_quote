@@ -262,6 +262,14 @@ class Extraction:
         self.summarize = summarize
 
     async def extract(self, chat_history: list) -> Optional[str]:
+
+        lines = []
+        for msg in chat_history:
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                content = content.replace("[YOU] ", "").replace("[THEM] ", "")
+                lines.append(content)
+        clean_transcript = " ".join(lines)
         if self.summarize and self.json_response:
             system_prompt = (
                 f"You are an assistant that extracts key information from conversations. "

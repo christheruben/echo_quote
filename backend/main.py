@@ -95,7 +95,7 @@ async def extract():
 # PDF QUOTE
 # =========================
 
-@app.get("/quote")
+@app.post("/quote")
 async def quote():
     pdf_bytes = await audio_manager.generate_quote_pdf()
     return StreamingResponse(

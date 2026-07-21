@@ -50,6 +50,7 @@ CURRENCY_ALIASES = {
     "euros": "EUR", "eur": "EUR",
 }
 
+
 def normalize_region(val: str):
     return REGION_ALIASES.get(val.strip().lower())
 
@@ -149,10 +150,21 @@ class AudioManager:
         self.extraction = Extraction(
             groq_client=self.groq_client,
             instructions=(
-                "Extract the following fields from the solar qualification call: "
-                "full_name, address, property_type (single family, multifamily, or commercial), "
-                "roof_type (shingle, tile, metal, or flat), and monthly_bill (in dollars). "
-                "If a field wasn't mentioned, return null for it."
+                "Extract the following fields from this solar qualification call transcript. "
+                "Return ONLY valid JSON with these exact keys:\n"
+                "- full_name: The person's full name (string, or null if not mentioned)\n"
+                "- address: The property address (string, or null if not mentioned)\n"
+                "- property_type: One of: 'single family', 'multifamily', 'commercial' (or null)\n"
+                "- roof_type: One of: 'shingle', 'tile', 'metal', 'flat' (or null)\n"
+                "- monthly_bill: The monthly electricity bill as a number (float/int, or null)\n"
+                "- currency: The currency code, e.g. 'USD', 'EUR', 'GBP', 'AUD', 'ZAR' (or null)\n"
+                "- region: The country/region (string, or null)\n\n"
+                "Rules:\n"
+                "1. If a field is not mentioned in the conversation, use null.\n"
+                "2. For property_type, normalize to one of the three allowed values.\n"
+                "3. For roof_type, normalize to one of the four allowed values.\n"
+                "4. For monthly_bill, extract just the number (e.g., 200 not '$200').\n"
+                "5. For currency, return the 3-letter code (e.g., 'USD' not 'US dollars')."
             ),
         )
         self.worker_task = asyncio.create_task(self.transcription.worker())
@@ -162,6 +174,7 @@ class AudioManager:
         """Called from the WebSocket handler for every incoming chunk."""
         if self.ingest:
             self.ingest.feed(speaker, pcm16_bytes, native_rate)
+
 
     async def stop_transcription(self):
         if not self.running:
