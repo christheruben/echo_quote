@@ -10,6 +10,8 @@ services:
       - VAD_AGGRESSIVENESS=1
       - SPEECH_START_FRAMES=1
       - SILENCE_END_FRAMES=10
+    volumes:
+      - ./backend:/app
 
   frontend:
     build: ./frontend

@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from audio_manager import AudioManager
 from io import BytesIO
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI()
 
@@ -14,6 +16,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class QuoteFields(BaseModel):
+    full_name: Optional[str] = None
+    address: Optional[str] = None
+    property_type: Optional[str] = None
+    roof_type: Optional[str] = None
+    monthly_bill: Optional[float] = None
+    currency: Optional[str] = None
 
 
 # =========================
@@ -87,8 +97,8 @@ async def transcript():
 
 @app.post("/extract")
 async def extract():
-    result = await audio_manager.extract_and_generate()
-    return {"result": result}
+    result, pdf_data = await audio_manager.extract_and_generate()
+    return {"result": result, "pdf_data": pdf_data}
 
 
 # =========================
@@ -96,10 +106,23 @@ async def extract():
 # =========================
 
 @app.post("/quote")
-async def quote():
-    pdf_bytes = await audio_manager.generate_quote_pdf()
+async def quote(quote_fields: QuoteFields):
+    pdf_bytes = await audio_manager.generate_quote_pdf(override_fields=quote_fields.dict(exclude_unset=True))
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=solar_quote.pdf"},
     )
+
+#========================
+# TESTING
+#=======================
+
+@app.post("/debug/seed_transcript")
+async def seed_transcript():
+    await audio_manager.start_transcription()
+    audio_manager.transcription.chat_history.append({
+        "role": "user",
+        "content": "[YOU] John Smith, single family home, tile roof, monthly bill $200 USD."
+    })
+    return {"status": "seeded"}

@@ -1,5 +1,5 @@
 from audio_pipeline import Transcription, Extraction, StreamIngest
-from pdf_generation import QuotePDFGenerator
+from pdf_generation import QuotePDFGenerator, CURRENCIES
 
 import asyncio
 import json
@@ -61,34 +61,31 @@ def normalize_currency(val: str):
 # =========================
 # PDF GENERATION
 # =========================
-def parse_and_generate(result: str):
-    try:
-        data = json.loads(result)
-    except json.JSONDecodeError as e:
-        print(colored(f"[PARSE ERROR] {e}", "red"))
-        return
-
-    if "extracted" in data:
-        data = data["extracted"]
-
-    full_name     = data.get("full_name") or "Unknown"
-    address       = data.get("address") or "Unknown"
+def build_quote_pdf(data: dict)-> bytes:
+    """Builds pdf quote based on dict fields"""
+    full_name = data.get("full_name") or "Unknown"
+    address = data.get("address") or "Unknown"
     property_type = data.get("property_type") or DEFAULTS["property_type"]
-    roof_type     = data.get("roof_type") or DEFAULTS["roof_type"]
-
+    roof_type = data.get("roof_type") or DEFAULTS["roof_type"]
     raw_bill = data.get("monthly_bill")
+
     try:
         monthly_bill = float(raw_bill) if raw_bill is not None else DEFAULTS["monthly_bill"]
     except (TypeError, ValueError):
         print(colored(f"[WARNING] Could not parse monthly_bill '{raw_bill}', using default", "yellow"))
         monthly_bill = DEFAULTS["monthly_bill"]
+    
+    currency_key = data.get("currency") or DEFAULTS["currency"]
+    if currency_key not in CURRENCIES:
+        print(colored(f"[WARNING] Unknown currency '{currency_key}', using default", "yellow"))
+        currency_key = DEFAULTS["currency"]
 
-    print(colored("\n--- Extracted Quote Parameters ---", "cyan"))
+    print (colored("\n--- Extracted Quote Parameters ---", "cyan"))
     print(f"  Full Name:       {full_name}")
     print(f"  Address:         {address}")
     print(f"  Property Type:   {property_type}")
     print(f"  Roof Type:       {roof_type}")
-    print(f"  Monthly Bill:    ${monthly_bill:.2f}")
+    print(f"  Monthly Bill:    ${monthly_bill:.2f} {currency_key}")
 
     gen = QuotePDFGenerator(
         full_name=full_name,
@@ -96,9 +93,17 @@ def parse_and_generate(result: str):
         property_type=property_type,
         roof_type=roof_type,
         monthly_bill=monthly_bill,
-        currency_key=DEFAULTS["currency"],
+        currency_key=currency_key,
     )
     return gen.generate_pdf()
+
+def parse_and_generate(result: str):
+        try:
+            data = json.loads(result).get("extracted", {})
+            return data
+        except json.JSONDecodeError as e:
+            print(colored(f"[PARSE ERROR] {e}", "red"))
+            return
 
 
 """
@@ -123,6 +128,7 @@ class AudioManager:
         self.extraction = None
         self.worker_task = None
         self.last_result = None
+        self.pdf_data = None
         self.sample_rate = sample_rate
         self.frame_duration = frame_duration
         self.vad_aggressiveness = vad_aggressiveness
@@ -189,9 +195,14 @@ class AudioManager:
         if not self.transcription:
             return None
         self.last_result = await self.extraction.extract(self.transcription.chat_history)
-        return self.last_result
+        self.pdf_data = parse_and_generate(self.last_result)
+        return self.last_result, self.pdf_data
 
-    async def generate_quote_pdf(self) -> bytes:
-        if not self.last_result:
+    async def generate_quote_pdf(self, override_fields:dict = None) -> bytes:
+        if override_fields:
+            merged={**self.pdf_data, **override_fields}
+            return build_quote_pdf(data=merged)
+        if not self.pdf_data:
             raise ValueError("No extraction result available. Run extract_and_generate() first.")
-        return parse_and_generate(self.last_result)
+   
+        return build_quote_pdf(self.pdf_data)

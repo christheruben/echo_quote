@@ -7,6 +7,7 @@ export default function TranscribePage() {
     const [isRunning, setIsRunning] = useState(false);
     const [extractResult, setExtractResult] = useState<string | null>(null);
     const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
+    const [quoteFields, setQuoteFields] = useState<Record<string, string>>({});
     const [captureError, setCaptureError] = useState<string | null>(null);
     const { start, stop } = useDualStreamCapture();
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -71,9 +72,40 @@ export default function TranscribePage() {
             if (!response.ok) throw new Error('Failed to extract');
             const data = await response.json();
             setExtractResult(data.result);
+            setQuoteFields(data.pdf_data);
         } catch (error) {
             console.error(error);
         }
+    };
+
+    const handleFieldChange = (field: string, value: string) => {
+        setQuoteFields((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleGenerateQuote = async () => {
+            try {
+                if (!quoteFields) throw new Error('No quote fields available');
+                const response = await fetch('http://localhost:8000/quote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(quoteFields),
+                });
+                if (!response.ok) throw new Error('Failed to generate quote');
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'quote.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error(error);
+                setCaptureError('Failed to generate quote. Please try again.');
+            }
+        
     };
 
     return (
@@ -168,6 +200,35 @@ export default function TranscribePage() {
                         </p>
                     )}
                 </div>
+                {/* Quote Form */}
+                {Object.keys(quoteFields).length > 0 && (
+                    <div className="p-6 border-t border-gray-100">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-4">
+                            Quote Parameters
+                        </p>
+                        <div className="space-y-2">
+                            {Object.entries(quoteFields).map(([key, value]) => (
+                                <div key={key} className="flex items-center gap-2">
+                                    <label className="text-sm text-gray-500 w-32">
+                                        {key.replace('_', ' ')}:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={value}
+                                        onChange={(e) => handleFieldChange(key, e.target.value)}
+                                        className="text-sm text-gray-700 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                            ))}
+                            <button
+                                onClick={handleGenerateQuote}
+                                className="bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                            >
+                                Generate Quote
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
