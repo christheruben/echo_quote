@@ -164,7 +164,6 @@ class AudioManager:
                 "- roof_type: One of: 'shingle', 'tile', 'metal', 'flat' (or null)\n"
                 "- monthly_bill: The monthly electricity bill as a number (float/int, or null)\n"
                 "- currency: The currency code, e.g. 'USD', 'EUR', 'GBP', 'AUD', 'ZAR' (or null)\n"
-                "- region: The country/region (string, or null)\n\n"
                 "Rules:\n"
                 "1. If a field is not mentioned in the conversation, use null.\n"
                 "2. For property_type, normalize to one of the three allowed values.\n"

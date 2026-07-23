@@ -23,7 +23,6 @@ export type SolarInput = {
   customerName: string;
   email: string;
   phoneNumber: string;
-  companyName: string;
   projectDescription: string;
   installationAddress: string;
   notes: string;
@@ -109,7 +108,7 @@ export default function SolarEstimator({ value, onChange }: Props) {
           value={value.email}
           onChange={(e) => update("email", e.target.value)}
         />
-
+        
         <input
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Phone"

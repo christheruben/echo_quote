@@ -2,7 +2,6 @@ type CustomerData = {
   customerName: string;
   email: string;
   phoneNumber: string;
-  companyName: string;
   projectDescription: string;
   installationAddress: string;
   notes: string;
@@ -47,11 +46,7 @@ export default function CustomerForm({ data, onChange }: Props) {
       </div>
 
       <div style={styles.row}>
-        <Input
-          label="Company Name (Optional)"
-          value={data.companyName}
-          onChange={(v) => update("companyName", v)}
-        />
+        
         <Textarea
           label="Project Description"
           value={data.projectDescription}
